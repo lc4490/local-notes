@@ -181,7 +181,7 @@ def _render_attachment(cur, note_dir, rel_path, display_name):
             return
     ext_label = ext.upper().lstrip('.') or 'FILE'
     char_fmt  = QTextCharFormat()
-    char_fmt.setFontFamilies([_FONT_BODY]); char_fmt.setFontPointSize(13.0)
+    char_fmt.setFontFamilies([_FONT_EDITOR]); char_fmt.setFontPointSize(13.0)
     char_fmt.setForeground(QColor(T2)); char_fmt.setBackground(QColor(BG2))
     char_fmt.setProperty(_ATT_PATH_PROP, rel_path)
     char_fmt.setProperty(_ATT_NAME_PROP, display_name)
@@ -215,7 +215,7 @@ def _apply_table_data(cur, rows):
     ])
     table = cur.insertTable(nrows, ncols, fmt)
     char_fmt = QTextCharFormat()
-    char_fmt.setFontFamilies([_FONT_BODY]); char_fmt.setFontPointSize(14.0)
+    char_fmt.setFontFamilies([_FONT_EDITOR]); char_fmt.setFontPointSize(14.0)
     char_fmt.setForeground(QColor(T1))
     for r, row_data in enumerate(rows):
         cf = _table_cell_fmt(r == 0)
@@ -281,20 +281,20 @@ def _apply_markdown(editor, text, note_dir=None):
             blk = QTextBlockFormat(); blk.setLeftMargin(_CL_LEFT_MARGIN); blk.setBottomMargin(4)
             cur.setBlockFormat(blk)
             cur.insertText('​', _make_circle_fmt(checked))
-            base_fmt.setFontFamilies([_FONT_BODY]); base_fmt.setFontPointSize(14.0)
+            base_fmt.setFontFamilies([_FONT_EDITOR]); base_fmt.setFontPointSize(14.0)
             base_fmt.setFontWeight(QFont.Weight.Normal)
             line = line[6:]
         elif line.startswith('### '):
-            base_fmt.setFontFamilies([_FONT_BODY]); base_fmt.setFontPointSize(15.0)
+            base_fmt.setFontFamilies([_FONT_EDITOR]); base_fmt.setFontPointSize(15.0)
             base_fmt.setFontWeight(QFont.Weight.DemiBold); line = line[4:]
         elif line.startswith('## '):
-            base_fmt.setFontFamilies([_FONT_BODY]); base_fmt.setFontPointSize(17.0)
+            base_fmt.setFontFamilies([_FONT_EDITOR]); base_fmt.setFontPointSize(17.0)
             base_fmt.setFontWeight(QFont.Weight.Bold); line = line[3:]
         elif line.startswith('# '):
-            base_fmt.setFontFamilies([_FONT_BODY]); base_fmt.setFontPointSize(20.0)
+            base_fmt.setFontFamilies([_FONT_EDITOR]); base_fmt.setFontPointSize(20.0)
             base_fmt.setFontWeight(QFont.Weight.Bold); line = line[2:]
         else:
-            base_fmt.setFontFamilies([_FONT_BODY]); base_fmt.setFontPointSize(14.0)
+            base_fmt.setFontFamilies([_FONT_EDITOR]); base_fmt.setFontPointSize(14.0)
             base_fmt.setFontWeight(QFont.Weight.Normal)
         for m in _INLINE_RE.finditer(line):
             bi2, b, it, u, s, mo, plain, ch = (m.group(k) for k in range(1, 9))
@@ -401,11 +401,15 @@ def _to_markdown(editor):
 
 
 # ── Autocorrect ───────────────────────────────────────────────────────────────
-try:
-    from autocorrect import Speller as _Speller
-    _autocorrect = _Speller()
-except Exception:
-    _autocorrect = None
+_autocorrect = None
+
+def _init_autocorrect():
+    global _autocorrect
+    try:
+        from autocorrect import Speller as _Speller
+        _autocorrect = _Speller()
+    except Exception:
+        pass
 
 def _rows_to_gfm(rows):
     """Convert a list of row lists to a GFM table string."""
@@ -528,6 +532,8 @@ class _GenPopup(QFrame):
 class _PwRow(QWidget):
     def __init__(self, parent, website='', username='', password='', on_changed=None, gen_popup=None):
         super().__init__(parent)
+        _t = _THEMES["notes24"] if _ACTIVE_THEME == "notes07" else _THEMES.get(_ACTIVE_THEME, _THEMES["notes26"])
+        BG2, DIV, T1, ACC = _t["BG2"], _t["DIV"], _t["T1"], _t["ACC"]
         self._on_changed  = on_changed
         self._gen_popup   = gen_popup
         self._hovering    = False
@@ -676,6 +682,8 @@ class PasswordNoteView(QWidget):
 
     def __init__(self, parent):
         super().__init__(parent)
+        _t = _THEMES["notes24"] if _ACTIVE_THEME == "notes07" else _THEMES.get(_ACTIVE_THEME, _THEMES["notes26"])
+        BG0 = _t["BG0"]
         self._path          = None
         self._encrypted_blob = None
         self._master_pw     = None
@@ -695,6 +703,8 @@ class PasswordNoteView(QWidget):
 
     # ── lock page ─────────────────────────────────────────────────────────────
     def _build_lock_page(self):
+        _t = _THEMES["notes24"] if _ACTIVE_THEME == "notes07" else _THEMES.get(_ACTIVE_THEME, _THEMES["notes26"])
+        BG0, BG2, DIV, T1, ACC = _t["BG0"], _t["BG2"], _t["DIV"], _t["T1"], _t["ACC"]
         w = QWidget(); w.setStyleSheet(f"background:{BG0};")
         v = QVBoxLayout(w); v.setAlignment(Qt.AlignmentFlag.AlignCenter); v.setSpacing(14)
 
@@ -732,6 +742,8 @@ class PasswordNoteView(QWidget):
 
     # ── table page ────────────────────────────────────────────────────────────
     def _build_table_page(self):
+        _t = _THEMES["notes24"] if _ACTIVE_THEME == "notes07" else _THEMES.get(_ACTIVE_THEME, _THEMES["notes26"])
+        BG0, BG2, DIV, T1, T2, ACC = _t["BG0"], _t["BG2"], _t["DIV"], _t["T1"], _t["T2"], _t["ACC"]
         w = QWidget(); w.setStyleSheet(f"background:{BG0};")
         v = QVBoxLayout(w); v.setContentsMargins(32, 16, 32, 16); v.setSpacing(8)
 
@@ -751,7 +763,7 @@ class PasswordNoteView(QWidget):
         def _scope_btn(label, scope):
             b = QPushButton(label); b.setCheckable(True); b.setFixedHeight(28)
             b.setStyleSheet(
-                f"QPushButton{{background:{BG2};color:{T2};border:1px solid {DIV};"
+                f"QPushButton{{background:{BG2};color:{T1};border:1px solid {DIV};"
                 f"border-radius:6px;font-size:11px;padding:0 10px;}}"
                 f"QPushButton:checked{{background:{ACC};color:#fff;border-color:{ACC};}}"
                 f"QPushButton:hover{{color:{T1};}}")
@@ -1117,6 +1129,8 @@ class _FixToggle(QPushButton):
 class _BdgRow(QWidget):
     def __init__(self, parent, desc='', amount='', date='', category='', fixed=False, on_changed=None):
         super().__init__(parent)
+        _t = _THEMES["notes24"] if _ACTIVE_THEME == "notes07" else _THEMES.get(_ACTIVE_THEME, _THEMES["notes26"])
+        BG2, DIV, T1, T3, ACC = _t["BG2"], _t["DIV"], _t["T1"], _t["T3"], _t["ACC"]
         self._on_changed = on_changed
         self._del_cb     = None
         self._fixed      = fixed
@@ -1232,6 +1246,8 @@ class BudgetNoteView(QWidget):
         self._build_ui()
 
     def _build_ui(self):
+        _t = _THEMES["notes24"] if _ACTIVE_THEME == "notes07" else _THEMES.get(_ACTIVE_THEME, _THEMES["notes26"])
+        BG0, BG2, DIV, T1, T2, ACC = _t["BG0"], _t["BG2"], _t["DIV"], _t["T1"], _t["T2"], _t["ACC"]
         v = QVBoxLayout(self); v.setContentsMargins(32, 16, 32, 16); v.setSpacing(10)
         self.setStyleSheet(f"background:{BG0};")
 
@@ -1443,6 +1459,8 @@ class BudgetNoteView(QWidget):
         self._save_timer.start(600)
 
     def _update_stats(self):
+        _t = _THEMES["notes24"] if _ACTIVE_THEME == "notes07" else _THEMES.get(_ACTIVE_THEME, _THEMES["notes26"])
+        T1, T2 = _t["T1"], _t["T2"]
         def _parse(f):
             try: return float(f.text().replace(',', '').replace('$', ''))
             except ValueError: return 0.0
@@ -1617,14 +1635,34 @@ def note_count(notebook):
 def total_count():
     return sum(note_count(nb) for nb in list_notebooks())
 
-# ── Palette ───────────────────────────────────────────────────────────────────
-BG0 = "#1c1c1e"
-BG1 = "#242426"
-BG2 = "#2c2c2e"
-DIV = "#38383a"
-T1  = "#f2f2f7"
-T2  = "#8e8e93"
-T3  = "#48484a"
+# ── Themes ────────────────────────────────────────────────────────────────────
+_THEMES = {
+    "notes26": {
+        "BG0": "#1c1c1e", "BG1": "#242426", "BG2": "#2c2c2e",
+        "DIV": "#38383a", "SEL": "#3a3a3c",
+        "T1":  "#f2f2f7", "T2":  "#8e8e93", "T3":  "#48484a",
+        "ACC": "#0a84ff", "TBL": "#505052",
+    },
+    "notes24": {
+        "BG0": "#1c1c1e", "BG1": "#242426", "BG2": "#2c2c2e",
+        "DIV": "#38383a", "SEL": "#3a3a3c",
+        "T1":  "#f2f2f7", "T2":  "#8e8e93", "T3":  "#48484a",
+        "ACC": "#9F832A", "TBL": "#505052",
+    },
+    "notes07": {
+        "BG0": "#fef9c0", "BG1": "#242426", "BG2": "#2c2c2e",
+        "DIV": "#38383a", "SEL": "#3a3a3c",
+        "T1":  "#f2f2f7", "T2":  "#8e8e93", "T3":  "#48484a",
+        "ACC": "#9F832A", "TBL": "#505052",
+    },
+}
+_ACTIVE_THEME = {"dark": "notes26", "classic": "notes24"}.get(
+    _CFG.get("theme", "notes26"), _CFG.get("theme", "notes26"))
+_FONT_EDITOR = "Noteworthy" if _ACTIVE_THEME == "notes07" else _FONT_BODY
+
+# palette globals — populated by _load_theme_globals()
+BG0 = BG1 = BG2 = DIV = SEL = T1 = T2 = T3 = ACC = _TBL_BORDER = ""
+_MENU_SS = _POPUP_STYLE = ""
 
 def _draw_nb_icon(painter, cx, cy, is_trash, color, is_lock=False, is_budget=False):
     iw, ih = 15.0, 12.0
@@ -1655,15 +1693,18 @@ def _draw_nb_icon(painter, cx, cy, is_trash, color, is_lock=False, is_budget=Fal
         painter.drawRoundedRect(QRectF(x,          y,          iw*0.44, ih*0.38), 2.0, 2.0)
         painter.drawRoundedRect(QRectF(x,          y+ih*0.28,  iw,      ih*0.72), 2.5, 2.5)
     painter.restore()
-SEL = "#3a3a3c"
-ACC = "#0a84ff"
-_TBL_BORDER = "#505052"  # table grid-line colour
-
-_MENU_SS = f"""
+def _load_theme_globals():
+    global BG0, BG1, BG2, DIV, SEL, T1, T2, T3, ACC, _TBL_BORDER, _MENU_SS, _POPUP_STYLE
+    t = _THEMES.get(_ACTIVE_THEME, _THEMES["notes26"])
+    BG0 = t["BG0"]; BG1 = t["BG1"]; BG2 = t["BG2"]
+    DIV = t["DIV"]; SEL = t["SEL"]
+    T1  = t["T1"];  T2  = t["T2"];  T3  = t["T3"]
+    ACC = t["ACC"]; _TBL_BORDER = t["TBL"]
+    _MENU_SS = f"""
 QMenu {{
-    background: #1e1e20;
+    background: {BG1};
     color: {T1};
-    border: 1px solid {T3};
+    border: 1px solid {DIV};
     border-radius: 10px;
     padding: 5px 0px;
     font-size: 13px;
@@ -1674,18 +1715,27 @@ QMenu::item {{
     border-radius: 5px;
     margin: 1px 4px;
 }}
-QMenu::item:selected {{
-    background: {SEL};
-}}
-QMenu::item:disabled {{
-    color: {T3};
-}}
-QMenu::separator {{
-    height: 1px;
-    background: {DIV};
-    margin: 4px 0px;
-}}
+QMenu::item:selected {{ background: {SEL}; }}
+QMenu::item:disabled {{ color: {T3}; }}
+QMenu::separator {{ height: 1px; background: {DIV}; margin: 4px 0px; }}
 """
+    _POPUP_STYLE = f"""
+    QFrame      {{ background:{BG2}; border:1px solid {DIV}; border-radius:10px; }}
+    QPushButton {{ background:transparent; color:{T1}; border:none; border-radius:6px;
+                  text-align:left; padding:8px 14px; font-size:13px; }}
+    QPushButton:hover {{ background:{SEL}; }}
+"""
+
+_load_theme_globals()
+
+def _fmt_btn_ss(active: bool) -> str:
+    if active:
+        return (f"QPushButton{{background:{SEL};border:none;border-radius:6px;"
+                f"color:{T1};text-align:center;}}"
+                f"QPushButton:hover{{background:{DIV};}}")
+    return (f"QPushButton{{background:transparent;border:none;border-radius:6px;"
+            f"color:{T1};text-align:center;}}"
+            f"QPushButton:hover{{background:{SEL};}}")
 
 def _make_styled_menu(parent):
     m = QMenu(parent)
@@ -1710,7 +1760,7 @@ _CL_LEFT_MARGIN  = 26  # px reserved for circle; text starts this far right
 def _make_circle_fmt(checked: bool) -> QTextCharFormat:
     fmt = QTextCharFormat()
     fmt.setProperty(_CL_CHECKED_KEY, checked)
-    fmt.setFontFamilies([_FONT_BODY])
+    fmt.setFontFamilies([_FONT_EDITOR])
     fmt.setFontPointSize(14.0)  # match body height; zero-width so no advance
     fmt.setForeground(QColor(BG0))
     return fmt
@@ -1761,10 +1811,42 @@ def _paint_circles(editor):
                         painter.drawEllipse(QPointF(cx, cy), r, r)
         block = block.next()
 
+def _paint_ruled_lines(editor):
+    vp = editor.viewport()
+    painter = QPainter(vp)
+    pen = QPen(QColor("#c8c060")); pen.setWidth(1)
+    painter.setPen(pen)
+    scroll_y = editor.verticalScrollBar().value()
+    doc = editor.document()
+    dl = doc.documentLayout()
+    line_h = editor.fontMetrics().lineSpacing()
+    last_y = -1
+    block = doc.begin()
+    while block.isValid():
+        blk_layout = block.layout()
+        if blk_layout:
+            blk_top = dl.blockBoundingRect(block).top()
+            for i in range(blk_layout.lineCount()):
+                line = blk_layout.lineAt(i)
+                vp_y = blk_top + line.rect().bottom() - scroll_y
+                if 0 <= vp_y <= vp.height():
+                    painter.drawLine(0, int(vp_y), vp.width(), int(vp_y))
+                last_y = vp_y
+        block = block.next()
+    # continue lines below last text block to fill the viewport
+    y = last_y + line_h
+    while y <= vp.height():
+        painter.drawLine(0, int(y), vp.width(), int(y))
+        y += line_h
+    painter.end()
+
+
 class NoteEditor(QTextEdit):
     def viewportEvent(self, event):
         result = super().viewportEvent(event)
         if event.type() == QEvent.Type.Paint:
+            if _ACTIVE_THEME == "notes07":
+                _paint_ruled_lines(self)
             _paint_circles(self)
         return result
 
@@ -2026,21 +2108,6 @@ class ConfirmDialog(QDialog):
         v.addLayout(row)
 
 # ── Toolbar popups ────────────────────────────────────────────────────────────
-_POPUP_STYLE = f"""
-    QFrame      {{ background:{BG2}; border:1px solid {DIV}; border-radius:10px; }}
-    QPushButton {{ background:transparent; color:{T1}; border:none; border-radius:6px;
-                  text-align:left; padding:8px 14px; font-size:13px; }}
-    QPushButton:hover {{ background:{SEL}; }}
-"""
-
-_MENU_SS = f"""
-    QMenu {{ background:{BG2}; border:1px solid {DIV}; border-radius:8px; padding:4px 0; }}
-    QMenu::item {{ color:{T1}; font-size:13px; padding:6px 18px; border-radius:4px; }}
-    QMenu::item:selected {{ background:{SEL}; }}
-    QMenu::item:disabled {{ color:{T3}; }}
-    QMenu::separator {{ background:{DIV}; height:1px; margin:3px 8px; }}
-"""
-
 class _ToolPopup(QFrame):
     def __init__(self, parent):
         super().__init__(parent, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
@@ -2072,12 +2139,6 @@ class _ToolPopup(QFrame):
         return f
 
 class FormatPopup(_ToolPopup):
-    _SS_ACTIVE = (f"QPushButton{{background:{SEL};border:none;border-radius:6px;"
-                  f"color:{T1};text-align:center;}}"
-                  f"QPushButton:hover{{background:{DIV};}}")
-    _SS_NORMAL = (f"QPushButton{{background:transparent;border:none;border-radius:6px;"
-                  f"color:{T1};text-align:center;}}"
-                  f"QPushButton:hover{{background:{SEL};}}")
 
     def __init__(self, editor, parent):
         super().__init__(parent)
@@ -2099,7 +2160,7 @@ class FormatPopup(_ToolPopup):
             f.setItalic(italic); f.setUnderline(underline)
             if strike: f.setStrikeOut(True)
             b.setFont(f)
-            b.setStyleSheet(self._SS_NORMAL)
+            b.setStyleSheet(_fmt_btn_ss(False))
             b.clicked.connect(lambda _, ft=fmt_type: (self._wrap(ft), self.hide()))
             self._fmt_btns[fmt_type] = b
             row.addWidget(b)
@@ -2164,7 +2225,7 @@ class FormatPopup(_ToolPopup):
             'strikethrough': cf.fontStrikeOut(),
         }
         for ft, on in states.items():
-            self._fmt_btns[ft].setStyleSheet(self._SS_ACTIVE if on else self._SS_NORMAL)
+            self._fmt_btns[ft].setStyleSheet(_fmt_btn_ss(on))
 
         # Paragraph style
         sz = cf.fontPointSize()
@@ -2268,6 +2329,10 @@ class _ToolbarIconButton(QPushButton):
             self._table(p, cx, cy)
         elif self._icon == "attach":
             self._attach(p, cx, cy)
+        elif self._icon == "sidebar":
+            self._panel_icon(p, cx, cy, col=0)
+        elif self._icon == "notelist":
+            self._panel_icon(p, cx, cy, col=1)
         p.end()
 
     def _checklist(self, p, cx, cy):
@@ -2310,6 +2375,23 @@ class _ToolbarIconButton(QPushButton):
         inner.quadTo(ix + iw, iy, ix + iw, iy + ir)
         inner.lineTo(ix + iw, iy + ih)
         p.drawPath(inner)
+
+    def _panel_icon(self, p, cx, cy, col):
+        # three-panel layout icon; col=0 highlights left, col=1 highlights middle
+        pen = QPen(self._ink, 1.4, Qt.PenStyle.SolidLine,
+                   Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
+        x0, y0, w, h = cx - 9, cy - 7, 18, 14
+        p.drawRoundedRect(QRectF(x0, y0, w, h), 2, 2)
+        d1, d2 = x0 + 6, x0 + 12
+        p.drawLine(QPointF(d1, y0), QPointF(d1, y0 + h))
+        p.drawLine(QPointF(d2, y0), QPointF(d2, y0 + h))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(self._ink)
+        if col == 0:
+            p.drawRoundedRect(QRectF(x0 + 1.5, y0 + 1.5, 4, h - 3), 1.5, 1.5)
+        else:
+            p.drawRect(QRectF(d1 + 0.5, y0 + 1.5, 5, h - 3))
 
 # ── Table column/row action toolbar ──────────────────────────────────────────
 _TBL_BTN_SS = (
@@ -3030,7 +3112,7 @@ class _AIChatPanel(QWidget):
             btn = QPushButton(p)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(
-                f"QPushButton{{background:{BG2};color:{T2};border:1px solid {DIV};"
+                f"QPushButton{{background:{BG2};color:{T1};border:1px solid {DIV};"
                 f"border-radius:10px;padding:6px 12px;font-size:12px;"
                 f"text-align:left;font-family:'{_FONT_BODY}';}}"
                 f"QPushButton:hover{{background:{SEL};color:{T1};}}"
@@ -3242,8 +3324,10 @@ class NotesApp(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Shift+N"), self).activated.connect(self._new_notebook)
         QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(self._toggle_search)
         QShortcut(QKeySequence("Ctrl+Meta+F"), self).activated.connect(self._toggle_fullscreen)
+        QShortcut(QKeySequence("Ctrl+Shift+S"), self).activated.connect(self._toggle_sidebar_panel)
+        QShortcut(QKeySequence("Ctrl+Shift+L"), self).activated.connect(self._toggle_list_panel)
         QShortcut(QKeySequence("Escape"), self).activated.connect(self._exit_fullscreen)
-        self._switch_notebook("Notes")
+        QTimer.singleShot(0, lambda: self._switch_notebook("Notes"))
 
     # ── Build UI ──────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -3262,6 +3346,8 @@ class NotesApp(QMainWindow):
         root.setStretchFactor(1, 0)
         root.setStretchFactor(2, 1)
         root.setStretchFactor(3, 0)
+        root.setCollapsible(0, True)
+        root.setCollapsible(1, True)
 
     # ── Sidebar ───────────────────────────────────────────────────────────────
     def _build_sidebar(self):
@@ -3289,7 +3375,7 @@ class NotesApp(QMainWindow):
             f"font-size:10px;letter-spacing:1px;border-radius:3px;padding:0;}}"
             f"QPushButton:hover{{color:{T1};background:{SEL};}}"
         )
-        self._folder_btn.clicked.connect(self._change_notes_folder)
+        self._folder_btn.clicked.connect(self._show_sidebar_menu)
         hl.addWidget(self._folder_btn)
         v.addWidget(hdr)
 
@@ -3303,13 +3389,19 @@ class NotesApp(QMainWindow):
         v.addWidget(self.sidebar_list)
 
         # bottom: "New Folder" button
-        bar = QWidget(); bar.setFixedHeight(36)
-        bl  = QHBoxLayout(bar); bl.setContentsMargins(8, 0, 8, 0)
-        nb_btn = QPushButton("+  New Folder")
-        nb_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        nb_btn.clicked.connect(self._show_new_folder_menu)
-        bl.addWidget(nb_btn)
-        v.addWidget(bar)
+        self._sidebar_bar = QWidget(); self._sidebar_bar.setFixedHeight(36)
+        self._sidebar_bar.setStyleSheet(f"background:{BG1};")
+        bl  = QHBoxLayout(self._sidebar_bar); bl.setContentsMargins(8, 0, 8, 0)
+        self._new_folder_btn = QPushButton("+  New Folder")
+        self._new_folder_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._new_folder_btn.clicked.connect(self._show_new_folder_menu)
+        self._new_folder_btn.setStyleSheet(
+            f"QPushButton{{background:{BG2};color:{T1};border:1px solid {DIV};"
+            f"border-radius:6px;font-size:12px;padding:4px 8px;}}"
+            f"QPushButton:hover{{background:{SEL};color:{T1};}}"
+        )
+        bl.addWidget(self._new_folder_btn)
+        v.addWidget(self._sidebar_bar)
         return w
 
     def _load_sidebar(self):
@@ -3441,8 +3533,8 @@ class NotesApp(QMainWindow):
         hl.addWidget(self._list_title); hl.addWidget(self._list_count)
         v.addWidget(hdr)
 
-        div = QFrame(); div.setFrameShape(QFrame.Shape.HLine)
-        div.setStyleSheet(f"color:{DIV};"); v.addWidget(div)
+        self._list_div = QFrame(); self._list_div.setFrameShape(QFrame.Shape.HLine)
+        self._list_div.setStyleSheet(f"color:{DIV};background:{BG2};"); v.addWidget(self._list_div)
 
         self.note_list = QListWidget()
         self.note_list.setFrameShape(QFrame.Shape.NoFrame)
@@ -3494,6 +3586,21 @@ class NotesApp(QMainWindow):
         worker.finished.connect(self._ai_panel.notify_index_done)
         worker.finished.connect(lambda _: worker.deleteLater())
         worker.start()
+
+    def _toggle_panel(self, idx, default_w):
+        sizes = list(self._root_splitter.sizes())
+        if sizes[idx] > 0:
+            setattr(self, f'_saved_panel_{idx}', sizes[idx])
+            sizes[idx] = 0
+        else:
+            sizes[idx] = getattr(self, f'_saved_panel_{idx}', default_w)
+        self._root_splitter.setSizes(sizes)
+
+    def _toggle_sidebar_panel(self):
+        self._toggle_panel(0, 200)
+
+    def _toggle_list_panel(self):
+        self._toggle_panel(1, 260)
 
     def _toggle_fullscreen(self):
         if self.isFullScreen():
@@ -3882,10 +3989,12 @@ class NotesApp(QMainWindow):
     # ── Editor ────────────────────────────────────────────────────────────────
     def _build_editor_panel(self):
         w = QWidget(); w.setObjectName("editorPanel")
+        self._editor_panel = w
         v = QVBoxLayout(w); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
 
         self._toolbar = QWidget(); tb = self._toolbar
         tb.setFixedHeight(44); tb.setObjectName("toolbar")
+        tb.setStyleSheet(self._toolbar_ss())
         tl = QHBoxLayout(tb); tl.setContentsMargins(14, 0, 14, 0); tl.setSpacing(2)
 
         _tbtn_ss = (
@@ -3894,6 +4003,11 @@ class NotesApp(QMainWindow):
             f"QPushButton:hover{{background:{SEL};}}"
             f"QPushButton:pressed{{background:{DIV};}}"
         )
+
+        self._btn_sidebar  = _ToolbarIconButton("sidebar")
+        self._btn_notelist = _ToolbarIconButton("notelist")
+        self._btn_sidebar.clicked.connect(self._toggle_sidebar_panel)
+        self._btn_notelist.clicked.connect(self._toggle_list_panel)
 
         self._btn_format = QPushButton("Aa")
         self._btn_format.setFont(QFont(_FONT_BODY, 14, QFont.Weight.Medium))
@@ -3910,8 +4024,8 @@ class NotesApp(QMainWindow):
         self._btn_table.clicked.connect(self._insert_table)
         self._btn_attach.clicked.connect(self._attach_action)
 
-        for b in (self._btn_format, self._btn_checklist,
-                  self._btn_table, self._btn_attach):
+        for b in (self._btn_sidebar, self._btn_notelist, self._btn_format,
+                  self._btn_checklist, self._btn_table, self._btn_attach):
             b.setFixedSize(40, 32)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             tl.addWidget(b)
@@ -3978,7 +4092,7 @@ class NotesApp(QMainWindow):
 
         self._date_lbl = QLabel()
         self._date_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._date_lbl.setStyleSheet(f"background:transparent;color:{T2};font-size:11px;padding:10px 0 4px;")
+        self._date_lbl.setStyleSheet(f"background:transparent;color:{'#666666' if _ACTIVE_THEME == 'notes07' else T2};font-size:11px;padding:10px 0 4px;")
         v.addWidget(self._date_lbl)
 
         title_row = QWidget(); title_row.setStyleSheet("background:transparent;")
@@ -3992,7 +4106,8 @@ class NotesApp(QMainWindow):
         self._title_edit = QLineEdit()
         self._title_edit.setPlaceholderText("Title")
         self._title_edit.setStyleSheet(
-            f"QLineEdit{{background:transparent;border:none;color:{T1};"
+            f"QLineEdit{{background:transparent;border:none;color:{'#1a1a1a' if _ACTIVE_THEME == 'notes07' else T1};"
+            f"font-family:{'Noteworthy' if _ACTIVE_THEME == 'notes07' else _FONT_BODY};"
             f"font-size:22px;font-weight:700;padding:2px 0 6px;}}"
         )
         self._title_edit.editingFinished.connect(self._on_title_changed)
@@ -4005,7 +4120,7 @@ class NotesApp(QMainWindow):
         self._editor.setFrameShape(QFrame.Shape.NoFrame)
         self._editor.setFont(QFont(_FONT_BODY, 14))
         self._editor.setStyleSheet(
-            f"QTextEdit{{background:{BG0};color:{T1};border:none;padding:0 32px 32px;}}"
+            f"QTextEdit{{background:{BG0};color:{'#1a1a1a' if _ACTIVE_THEME == 'notes07' else T1};border:none;padding:0 32px 32px;}}"
         )
         _opt = QTextOption(Qt.AlignmentFlag.AlignLeft)
         _opt.setWrapMode(QTextOption.WrapMode.WordWrap)
@@ -4204,6 +4319,7 @@ class NotesApp(QMainWindow):
         except Exception: pass
 
         if _is_password_note(raw):
+            self._set_special_note_panel(True)
             self._is_pw_note  = True
             self._is_bdg_note = False
             self._lock_prefix.show()
@@ -4218,6 +4334,7 @@ class NotesApp(QMainWindow):
             self._pw_view.show()
             self._pw_view.load(path, _body(raw))
         elif _is_budget_note(raw):
+            self._set_special_note_panel(True)
             self._is_pw_note  = False
             self._is_bdg_note = True
             self._lock_prefix.hide()
@@ -4230,6 +4347,7 @@ class NotesApp(QMainWindow):
             self._budget_view.show()
             self._budget_view.load(path, _body(raw))
         else:
+            self._set_special_note_panel(False)
             self._is_pw_note  = False
             self._is_bdg_note = False
             self._lock_prefix.hide()
@@ -4441,6 +4559,89 @@ class NotesApp(QMainWindow):
         self._rebuild_note_list()
         self._load_sidebar()
 
+    def _show_sidebar_menu(self):
+        menu = _make_styled_menu(self)
+        for label, key in (("Notes '07", "notes07"),
+                           ("Notes '24", "notes24"),
+                           ("Notes '26", "notes26")):
+            action = menu.addAction(label, lambda k=key: self._switch_theme(k))
+            if _ACTIVE_THEME == key:
+                action.setEnabled(False)
+        menu.addSeparator()
+        menu.addAction("Change Notes Folder…", self._change_notes_folder)
+        menu.exec(self._folder_btn.mapToGlobal(
+            self._folder_btn.rect().bottomLeft()))
+
+    def _switch_theme(self, theme_name):
+        global _ACTIVE_THEME, _FONT_EDITOR
+        _ACTIVE_THEME = theme_name
+        _FONT_EDITOR = "Noteworthy" if _ACTIVE_THEME == "notes07" else _FONT_BODY
+        _CFG["theme"] = theme_name
+        _save_config(_CFG)
+        _load_theme_globals()
+        apply_dark_theme(QApplication.instance())
+        self._refresh_inline_stylesheets()
+
+    def _set_special_note_panel(self, special: bool):
+        if special and _ACTIVE_THEME == "notes07":
+            _t = _THEMES["notes24"]
+            self._editor_panel.setStyleSheet(f"QWidget#editorPanel{{background:{_t['BG0']};}}")
+            self._title_edit.setStyleSheet(
+                f"QLineEdit{{background:transparent;border:none;color:{_t['T1']};"
+                f"font-family:{_FONT_BODY};font-size:22px;font-weight:700;padding:2px 0 6px;}}")
+            self._toolbar.setStyleSheet(
+                f"QWidget{{background:{_t['BG0']};border-bottom:1px solid {_t['DIV']};}}")
+        else:
+            self._editor_panel.setStyleSheet("")
+            self._toolbar.setStyleSheet(self._toolbar_ss())
+            self._title_edit.setStyleSheet(
+                f"QLineEdit{{background:transparent;border:none;"
+                f"color:{'#1a1a1a' if _ACTIVE_THEME == 'notes07' else T1};"
+                f"font-family:{'Noteworthy' if _ACTIVE_THEME == 'notes07' else _FONT_BODY};"
+                f"font-size:22px;font-weight:700;padding:2px 0 6px;}}")
+
+    def _toolbar_ss(self):
+        if _ACTIVE_THEME == "notes07":
+            return (
+                "QWidget{background:qlineargradient("
+                "x1:0,y1:0,x2:0,y2:1,"
+                "stop:0 #5C443B,stop:1 #A07562);"
+                "border-bottom:1px solid #3e2e28;}"
+            )
+        return f"QWidget{{background:{BG0};border-bottom:1px solid {DIV};}}"
+
+    def _refresh_inline_stylesheets(self):
+        self._toolbar.setStyleSheet(self._toolbar_ss())
+        self._editor.setStyleSheet(
+            f"QTextEdit{{background:{BG0};color:{'#1a1a1a' if _ACTIVE_THEME == 'notes07' else T1};border:none;padding:0 32px 32px;}}")
+        self._title_edit.setStyleSheet(
+            f"QLineEdit{{background:transparent;border:none;color:{'#1a1a1a' if _ACTIVE_THEME == 'notes07' else T1};"
+            f"font-family:{'Noteworthy' if _ACTIVE_THEME == 'notes07' else _FONT_BODY};"
+            f"font-size:22px;font-weight:700;padding:2px 0 6px;}}")
+        self._date_lbl.setStyleSheet(
+            f"background:transparent;color:{'#666666' if _ACTIVE_THEME == 'notes07' else T2};font-size:11px;padding:10px 0 4px;")
+        self._lock_prefix.setStyleSheet(
+            f"color:{T1};font-size:22px;font-weight:700;"
+            f"background:transparent;padding:2px 0 6px;")
+        self._search_bar.setStyleSheet(
+            f"QLineEdit{{background:transparent;border:none;color:{T1};"
+            f"font-size:13px;font-family:'{_FONT_BODY}';"
+            f"selection-background-color:{ACC};}}")
+        self._format_popup.setStyleSheet(_POPUP_STYLE)
+        for btn in self._format_popup._fmt_btns.values():
+            btn.setStyleSheet(_fmt_btn_ss(False))
+        for chk in self._format_popup._style_checks.values():
+            chk.setStyleSheet(f"color:{ACC};font-size:14px;background:transparent;")
+        self._list_div.setStyleSheet(f"color:{DIV};background:{BG2};")
+        self._sidebar_bar.setStyleSheet(f"background:{BG1};")
+        self._new_folder_btn.setStyleSheet(
+            f"QPushButton{{background:{BG2};color:{T1};border:1px solid {DIV};"
+            f"border-radius:6px;font-size:12px;padding:4px 8px;}}"
+            f"QPushButton:hover{{background:{SEL};color:{T1};}}"
+        )
+        self.sidebar_list.update()
+        self.note_list.update()
+
     def _change_notes_folder(self):
         global ROOT
         new_root = QFileDialog.getExistingDirectory(
@@ -4481,7 +4682,6 @@ class NotesApp(QMainWindow):
 
 # ── Dark theme ────────────────────────────────────────────────────────────────
 def apply_dark_theme(app: QApplication):
-    app.setStyle("Fusion")
     pal = QPalette()
     pal.setColor(QPalette.ColorRole.Window,          QColor(BG0))
     pal.setColor(QPalette.ColorRole.WindowText,      QColor(T1))
@@ -4530,7 +4730,9 @@ def apply_dark_theme(app: QApplication):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
     apply_dark_theme(app)
     window = NotesApp()
     window.show()
+    QTimer.singleShot(500, _init_autocorrect)
     sys.exit(app.exec())
