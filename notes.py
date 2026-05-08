@@ -22,7 +22,7 @@ from PySide6.QtCore import Qt, QTimer, QSize, QRect, QRectF, QPoint, QPointF, QE
 from PySide6.QtGui import QFont, QPalette, QColor, QBrush, QFontMetrics, QPainter, QTextOption, QTextCursor, QTextCharFormat, QTextBlockFormat, QTextTableFormat, QTextTableCellFormat, QTextLength, QTextFrameFormat, QTextFormat, QShortcut, QKeySequence, QPen, QPainterPath, QSyntaxHighlighter, QPixmap, QTextImageFormat, QTextDocument, QDesktopServices
 
 # ── Config ────────────────────────────────────────────────────────────────────
-_HERE        = os.path.dirname(__file__)
+_HERE        = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else __file__)
 CONFIG_FILE  = os.path.join(_HERE, "config.json")
 
 def _find_or_create_notes_folder():
@@ -74,6 +74,7 @@ _SKIP_FILES = {".DS_Store"}
 _IMAGE_EXTS   = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp', '.heic', '.heif'}
 _ATT_PATH_PROP = int(QTextFormat.Property.UserProperty) + 100
 _ATT_NAME_PROP = int(QTextFormat.Property.UserProperty) + 101
+_LINK_HREF_PROP = int(QTextFormat.Property.UserProperty) + 102
 ALL_NB       = "__all__"
 ALL_NB_LABEL = "All Notes"
 TRASH_NB     = "Recently Deleted"
@@ -188,15 +189,31 @@ def _render_attachment(cur, note_dir, rel_path, display_name):
     cur.insertText(f'📎  {display_name}  ·  {ext_label}', char_fmt)
 
 # ── Markdown ↔ rich-text helpers ─────────────────────────────────────────────
+_URL_RE = re.compile(r'https?://[^\s<>"\'\[\]()]+')
+
+def _insert_with_urls(cur, text, base_fmt):
+    last = 0
+    for m in _URL_RE.finditer(text):
+        if m.start() > last:
+            cur.insertText(text[last:m.start()], base_fmt)
+        url_fmt = QTextCharFormat(base_fmt)
+        url_fmt.setAnchor(True); url_fmt.setAnchorHref(m.group())
+        url_fmt.setForeground(QColor(ACC)); url_fmt.setFontUnderline(True)
+        cur.insertText(m.group(), url_fmt)
+        last = m.end()
+    if last < len(text):
+        cur.insertText(text[last:], base_fmt)
+
 _INLINE_RE = re.compile(
-    r'\*\*\*(.+?)\*\*\*'   # group 1: bold + italic
-    r'|\*\*(.+?)\*\*'       # group 2: bold
-    r'|\*(.+?)\*'           # group 3: italic
-    r'|__(.+?)__'           # group 4: underline
-    r'|~~(.+?)~~'           # group 5: strikethrough
-    r'|`([^`]+)`'           # group 6: mono
-    r'|([^*_~`\n]+)'        # group 7: plain
-    r'|(.)',                # group 8: catch-all
+    r'\[(?P<lnkt>[^\]]+)\]\((?P<lnku>[^)]+)\)'  # [text](url)
+    r'|\*\*\*(?P<bi2>.+?)\*\*\*'
+    r'|\*\*(?P<b>.+?)\*\*'
+    r'|\*(?P<it>.+?)\*'
+    r'|__(?P<u>.+?)__'
+    r'|~~(?P<s>.+?)~~'
+    r'|`(?P<mo>[^`]+)`'
+    r'|(?P<plain>[^*_~`\[\n]+)'
+    r'|(?P<ch>.)'
 )
 
 def _apply_table_data(cur, rows):
@@ -297,8 +314,22 @@ def _apply_markdown(editor, text, note_dir=None):
             base_fmt.setFontFamilies([_FONT_EDITOR]); base_fmt.setFontPointSize(14.0)
             base_fmt.setFontWeight(QFont.Weight.Normal)
         for m in _INLINE_RE.finditer(line):
-            bi2, b, it, u, s, mo, plain, ch = (m.group(k) for k in range(1, 9))
-            if bi2 is not None:
+            lnkt  = m.group('lnkt')
+            lnku  = m.group('lnku')
+            bi2   = m.group('bi2')
+            b     = m.group('b')
+            it    = m.group('it')
+            u     = m.group('u')
+            s     = m.group('s')
+            mo    = m.group('mo')
+            plain = m.group('plain')
+            ch    = m.group('ch')
+            if lnkt is not None:
+                fmt = QTextCharFormat(base_fmt)
+                fmt.setAnchor(True); fmt.setAnchorHref(lnku)
+                fmt.setForeground(QColor(ACC)); fmt.setFontUnderline(True)
+                cur.insertText(lnkt, fmt)
+            elif bi2 is not None:
                 fmt = QTextCharFormat(base_fmt); fmt.setFontWeight(QFont.Weight.Bold); fmt.setFontItalic(True)
                 cur.insertText(bi2, fmt)
             elif b is not None:
@@ -317,8 +348,10 @@ def _apply_markdown(editor, text, note_dir=None):
                 fmt = QTextCharFormat(base_fmt)
                 fmt.setFontFamilies([_FONT_MONO]); fmt.setFontPointSize(13)
                 cur.insertText(mo, fmt)
-            else:
-                cur.insertText(plain or ch or '', base_fmt)
+            elif plain:
+                _insert_with_urls(cur, plain, base_fmt)
+            elif ch:
+                cur.insertText(ch, base_fmt)
         in_fresh = False
         i += 1
     editor.blockSignals(False)
@@ -380,6 +413,10 @@ def _to_markdown(editor):
                 elif sz >= 16:    prefix = '## '
                 elif sz >= 14.5:  prefix = '### '
             is_hdg = bool(prefix) and not is_checklist
+            href   = fmt.anchorHref()
+            if href:
+                parts.append(text if text == href else f'[{text}]({href})')
+                it += 1; continue
             mono   = fmt.font().family() == _FONT_MONO
             bold   = (wt >= QFont.Weight.Bold) and not is_hdg
             ital   = fmt.fontItalic()
@@ -1842,7 +1879,35 @@ def _paint_ruled_lines(editor):
 
 
 class NoteEditor(QTextEdit):
+    def insertFromMimeData(self, source):
+        if source.hasText() and not source.hasHtml():
+            text = source.text()
+            if _URL_RE.search(text):
+                cur = self.textCursor()
+                base = QTextCharFormat(cur.charFormat())
+                base.setAnchor(False); base.setAnchorHref("")
+                base.setForeground(QColor(T1)); base.setFontUnderline(False)
+                _insert_with_urls(cur, text, base)
+                # reset to non-link format after insertion
+                reset = QTextCharFormat(base)
+                cur.insertText("", reset)
+                self.setTextCursor(cur)
+                return
+        super().insertFromMimeData(source)
+
     def viewportEvent(self, event):
+        if event.type() == QEvent.Type.MouseMove:
+            anchor = self.anchorAt(event.position().toPoint())
+            self.viewport().setCursor(
+                Qt.CursorShape.PointingHandCursor if anchor
+                else Qt.CursorShape.IBeamCursor
+            )
+        elif event.type() == QEvent.Type.MouseButtonPress:
+            if event.button() == Qt.MouseButton.LeftButton:
+                anchor = self.anchorAt(event.position().toPoint())
+                if anchor:
+                    QDesktopServices.openUrl(QUrl(anchor))
+                    return True
         result = super().viewportEvent(event)
         if event.type() == QEvent.Type.Paint:
             if _ACTIVE_THEME == "notes07":
@@ -2107,6 +2172,49 @@ class ConfirmDialog(QDialog):
         row.addWidget(cancel); row.addWidget(confirm)
         v.addLayout(row)
 
+class _LinkDialog(QDialog):
+    def __init__(self, url="", display="", show_display=True, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add Link")
+        h = 210 if show_display else 170
+        self.setFixedSize(380, h)
+        p = self.palette()
+        p.setColor(QPalette.ColorRole.Window, QColor(BG1))
+        self.setPalette(p); self.setAutoFillBackground(True)
+        self.setStyleSheet(f"""
+            QLabel   {{ background:transparent; color:{T1}; font-size:13px; font-weight:500; }}
+            QLineEdit{{ background:{BG2}; color:{T1}; border:1px solid {DIV};
+                        border-radius:8px; padding:8px 12px; font-size:14px; }}
+            QLineEdit:focus {{ border:1px solid {ACC}; }}
+            QPushButton {{ border-radius:8px; font-size:13px; padding:7px 0; font-weight:500; }}
+            QPushButton#ok     {{ background:{ACC}; color:#fff; border:none; }}
+            QPushButton#ok:hover {{ background:#1a8eff; }}
+            QPushButton#cancel {{ background:{SEL}; color:{T1}; border:none; }}
+            QPushButton#cancel:hover {{ background:{DIV}; }}
+        """)
+        v = QVBoxLayout(self); v.setContentsMargins(24, 20, 24, 20); v.setSpacing(10)
+        if show_display:
+            v.addWidget(QLabel("Display text"))
+            self._disp = QLineEdit(display); self._disp.setPlaceholderText("Link text")
+            v.addWidget(self._disp)
+        else:
+            self._disp = None
+        v.addWidget(QLabel("URL"))
+        self._url = QLineEdit(url); self._url.setPlaceholderText("https://")
+        v.addWidget(self._url)
+        row = QHBoxLayout(); row.setSpacing(10)
+        cancel = QPushButton("Cancel"); cancel.setObjectName("cancel")
+        ok     = QPushButton("OK");     ok.setObjectName("ok")
+        cancel.clicked.connect(self.reject)
+        ok.clicked.connect(self.accept)
+        self._url.returnPressed.connect(self.accept)
+        row.addWidget(cancel); row.addWidget(ok)
+        v.addLayout(row)
+        (self._disp or self._url).setFocus()
+
+    def result_url(self):     return self._url.text().strip()
+    def result_display(self): return self._disp.text().strip() if self._disp else ""
+
 # ── Toolbar popups ────────────────────────────────────────────────────────────
 class _ToolPopup(QFrame):
     def __init__(self, parent):
@@ -2165,6 +2273,12 @@ class FormatPopup(_ToolPopup):
             self._fmt_btns[fmt_type] = b
             row.addWidget(b)
         row.addStretch()
+
+        self._btn_link = _ToolbarIconButton("link"); self._btn_link.setFixedSize(38, 34)
+        self._btn_link.setStyleSheet(_fmt_btn_ss(False))
+        self._btn_link.clicked.connect(self._insert_link)
+        row.addWidget(self._btn_link)
+
         v.addWidget(row_w)
         v.addWidget(self._divider())
 
@@ -2226,6 +2340,7 @@ class FormatPopup(_ToolPopup):
         }
         for ft, on in states.items():
             self._fmt_btns[ft].setStyleSheet(_fmt_btn_ss(on))
+        self._btn_link.setStyleSheet(_fmt_btn_ss(bool(cf.anchorHref())))
 
         # Paragraph style
         sz = cf.fontPointSize()
@@ -2278,6 +2393,62 @@ class FormatPopup(_ToolPopup):
         elif style == 'mono':
             fmt.setFontFamilies([_FONT_MONO]); fmt.setFontPointSize(13.0)
         cur.setCharFormat(fmt)
+        self._ed.setTextCursor(cur)
+
+    def _insert_link(self):
+        self.hide()
+        cur = self._ed.textCursor()
+        existing_href = cur.charFormat().anchorHref()
+        has_sel = cur.hasSelection()
+
+        if existing_href:
+            dlg = _LinkDialog(url=existing_href, show_display=False, parent=self._ed.window())
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            new_url = dlg.result_url()
+            if not new_url:
+                self._remove_link(cur)
+                return
+            fmt = QTextCharFormat()
+            fmt.setAnchorHref(new_url)
+            cur.mergeCharFormat(fmt)
+        elif has_sel:
+            dlg = _LinkDialog(show_display=False, parent=self._ed.window())
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            url = dlg.result_url()
+            if not url:
+                return
+            fmt = QTextCharFormat()
+            fmt.setAnchor(True); fmt.setAnchorHref(url)
+            fmt.setForeground(QColor(ACC)); fmt.setFontUnderline(True)
+            cur.mergeCharFormat(fmt)
+        else:
+            dlg = _LinkDialog(show_display=True, parent=self._ed.window())
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            url = dlg.result_url()
+            if not url:
+                return
+            display = dlg.result_display() or url
+            fmt = QTextCharFormat()
+            fmt.setFontFamilies([_FONT_EDITOR]); fmt.setFontPointSize(14.0)
+            fmt.setAnchor(True); fmt.setAnchorHref(url)
+            fmt.setForeground(QColor(ACC)); fmt.setFontUnderline(True)
+            cur.insertText(display, fmt)
+            # reset format after link so typing continues in normal style
+            reset = QTextCharFormat()
+            reset.setFontFamilies([_FONT_EDITOR]); reset.setFontPointSize(14.0)
+            reset.setAnchor(False); reset.setAnchorHref("")
+            reset.setForeground(QColor(T1)); reset.setFontUnderline(False)
+            cur.insertText("", reset)
+        self._ed.setTextCursor(cur)
+
+    def _remove_link(self, cur):
+        fmt = QTextCharFormat()
+        fmt.setAnchor(False); fmt.setAnchorHref("")
+        fmt.setForeground(QColor(T1)); fmt.setFontUnderline(False)
+        cur.mergeCharFormat(fmt)
         self._ed.setTextCursor(cur)
 
 class ListPopup(_ToolPopup):
@@ -2333,6 +2504,8 @@ class _ToolbarIconButton(QPushButton):
             self._panel_icon(p, cx, cy, col=0)
         elif self._icon == "notelist":
             self._panel_icon(p, cx, cy, col=1)
+        elif self._icon == "link":
+            self._link_icon(p, cx, cy)
         p.end()
 
     def _checklist(self, p, cx, cy):
@@ -2375,6 +2548,17 @@ class _ToolbarIconButton(QPushButton):
         inner.quadTo(ix + iw, iy, ix + iw, iy + ir)
         inner.lineTo(ix + iw, iy + ih)
         p.drawPath(inner)
+
+    def _link_icon(self, p, cx, cy):
+        pen = QPen(self._ink, 1.5, Qt.PenStyle.SolidLine,
+                   Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
+        for dx, dy in ((-2.0, 2.0), (2.0, -2.0)):
+            p.save()
+            p.translate(cx + dx, cy + dy)
+            p.rotate(-45)
+            p.drawRoundedRect(QRectF(-5.0, -2.5, 10.0, 5.0), 2.5, 2.5)
+            p.restore()
 
     def _panel_icon(self, p, cx, cy, col):
         # three-panel layout icon; col=0 highlights left, col=1 highlights middle
@@ -4153,6 +4337,8 @@ class NotesApp(QMainWindow):
             lambda: self._format_popup._wrap('italic'))
         QShortcut(QKeySequence("Ctrl+U"), self).activated.connect(
             lambda: self._format_popup._wrap('underline'))
+        QShortcut(QKeySequence("Ctrl+K"), self).activated.connect(
+            self._format_popup._insert_link)
         QShortcut(QKeySequence("Ctrl+Alt+Shift+V"), self).activated.connect(
             self._paste_match_style)
         self._editor.selectionChanged.connect(self._constrain_table_selection)
