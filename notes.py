@@ -4767,6 +4767,8 @@ class NotesApp(QMainWindow):
         _load_theme_globals()
         apply_dark_theme(QApplication.instance())
         self._refresh_inline_stylesheets()
+        if self.sel_path and not self._is_pw_note and not self._is_bdg_note:
+            self._open_note(self.sel_path)
 
     def _set_special_note_panel(self, special: bool):
         if special and _ACTIVE_THEME == "notes07":
