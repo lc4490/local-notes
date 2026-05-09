@@ -5,7 +5,7 @@ a = Analysis(
     ['notes.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('config.json', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

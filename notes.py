@@ -1505,28 +1505,35 @@ class BudgetNoteView(QWidget):
         initial = _parse(self._init_field)
         target  = _parse(self._target_field)
 
-        total = 0.0; spent = 0.0; fixed_total = 0.0
+        total = 0.0
+        gross_spent = 0.0; gross_fixed = 0.0
+        returns     = 0.0; fixed_returns = 0.0
         for rw in self._rows:
             v = _bdg_parse_amount(rw._amt.text())
             if v is not None:
                 total += v
                 if v < 0:
-                    spent += v
+                    gross_spent += abs(v)
                     if rw._fixed:
-                        fixed_total += v
+                        gross_fixed += abs(v)
+                elif v > 0:
+                    returns += v
+                    if rw._fixed:
+                        fixed_returns += v
 
-        balance   = initial + total
-        spent_abs = abs(spent)
-        remaining = target - spent_abs
+        balance    = initial + total
+        net_spent  = max(0.0, gross_spent - returns)
+        net_fixed  = max(0.0, gross_fixed - fixed_returns)
+        remaining  = target - net_spent
 
-        variable_spent = spent_abs - abs(fixed_total)
+        net_variable = max(0.0, net_spent - net_fixed)
         from datetime import date as _date2
         today = _date2.today()
-        days_elapsed   = today.day
-        days_in_month  = (_date2(today.year + today.month // 12,
-                                 today.month % 12 + 1, 1) - _date2(today.year, today.month, 1)).days
-        daily_avg      = variable_spent / days_elapsed if days_elapsed else 0
-        projected      = daily_avg * days_in_month + abs(fixed_total)
+        days_elapsed  = today.day
+        days_in_month = (_date2(today.year + today.month // 12,
+                                today.month % 12 + 1, 1) - _date2(today.year, today.month, 1)).days
+        daily_avg     = net_variable / days_elapsed if days_elapsed else 0
+        projected     = daily_avg * days_in_month + net_fixed
 
         def _fmt(v):
             return f"${v:,.2f}" if v >= 0 else f"-${abs(v):,.2f}"
@@ -1537,15 +1544,15 @@ class BudgetNoteView(QWidget):
         self._stat_balance.setText(_fmt(balance))
         self._stat_balance.setStyleSheet(
             f"color:{bal_color};font-size:15px;font-weight:600;background:transparent;")
-        self._stat_spent.setText(f"-${spent_abs:,.2f}")
+        self._stat_spent.setText(f"-${net_spent:,.2f}")
         self._stat_spent.setStyleSheet(
             f"color:#ff453a;font-size:15px;font-weight:600;background:transparent;")
         self._stat_remaining.setText(_fmt(remaining) if target else "—")
         self._stat_remaining.setStyleSheet(
             f"color:{rem_color};font-size:15px;font-weight:600;background:transparent;")
         daily_lbl = f"${daily_avg:,.2f}/day"
-        if fixed_total:
-            daily_lbl += f"\nexcl. ${abs(fixed_total):,.0f} fixed"
+        if net_fixed:
+            daily_lbl += f"\nexcl. ${net_fixed:,.0f} fixed"
         self._stat_daily.setText(daily_lbl)
         self._stat_daily.setStyleSheet(
             f"color:{T1};font-size:13px;font-weight:600;background:transparent;")
@@ -1571,17 +1578,22 @@ class BudgetNoteView(QWidget):
                 all_dates.add(md)
             except Exception:
                 pass
-            if v is not None and v < 0:
-                cat_totals[rw._cat.text().strip() or "Uncategorised"] += abs(v)
+            if v is not None and v != 0:
+                cat = rw._cat.text().strip() or "Uncategorised"
+                # positive amounts (refunds) reduce category and day totals
+                cat_totals[cat] += -v if v > 0 else abs(v)
                 if not rw._fixed and md is not None:
-                    day_totals[md] += abs(v)
+                    day_totals[md] += -v if v > 0 else abs(v)
 
-        cat_items = sorted(cat_totals.items(), key=lambda x: x[1], reverse=True)
+        # clip negatives (refunds exceeding spending in a bucket show as 0)
+        cat_items = sorted(
+            ((k, max(0.0, v)) for k, v in cat_totals.items() if v > 0),
+            key=lambda x: x[1], reverse=True)
         self._cat_chart.update_data(cat_items)
 
         if all_dates:
             month, max_day = max(all_dates)
-            day_items = [(f"{month}/{d}", day_totals.get((month, d), 0.0))
+            day_items = [(f"{month}/{d}", max(0.0, day_totals.get((month, d), 0.0)))
                          for d in range(1, max_day + 1)]
         else:
             day_items = []
@@ -1879,6 +1891,8 @@ def _paint_ruled_lines(editor):
 
 
 class NoteEditor(QTextEdit):
+    note_link_clicked = Signal(str)  # emits note path for localnotes:// hrefs
+
     def insertFromMimeData(self, source):
         if source.hasText() and not source.hasHtml():
             text = source.text()
@@ -1906,7 +1920,10 @@ class NoteEditor(QTextEdit):
             if event.button() == Qt.MouseButton.LeftButton:
                 anchor = self.anchorAt(event.position().toPoint())
                 if anchor:
-                    QDesktopServices.openUrl(QUrl(anchor))
+                    if anchor.startswith("localnotes://"):
+                        self.note_link_clicked.emit(anchor[len("localnotes://"):])
+                    else:
+                        QDesktopServices.openUrl(QUrl(anchor))
                     return True
         result = super().viewportEvent(event)
         if event.type() == QEvent.Type.Paint:
@@ -2173,47 +2190,141 @@ class ConfirmDialog(QDialog):
         v.addLayout(row)
 
 class _LinkDialog(QDialog):
-    def __init__(self, url="", display="", show_display=True, parent=None):
+    def __init__(self, url="", display="", show_display=True, notes=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Add Link")
-        h = 210 if show_display else 170
-        self.setFixedSize(380, h)
+        self.setFixedSize(380, 320)
         p = self.palette()
         p.setColor(QPalette.ColorRole.Window, QColor(BG1))
         self.setPalette(p); self.setAutoFillBackground(True)
-        self.setStyleSheet(f"""
+        ss = f"""
             QLabel   {{ background:transparent; color:{T1}; font-size:13px; font-weight:500; }}
             QLineEdit{{ background:{BG2}; color:{T1}; border:1px solid {DIV};
                         border-radius:8px; padding:8px 12px; font-size:14px; }}
             QLineEdit:focus {{ border:1px solid {ACC}; }}
+            QListWidget {{ background:{BG2}; color:{T1}; border:1px solid {DIV};
+                           border-radius:8px; font-size:13px; outline:none; }}
+            QListWidget::item {{ padding:6px 10px; border-radius:6px; }}
+            QListWidget::item:selected {{ background:{ACC}; color:#fff; }}
+            QListWidget::item:hover:!selected {{ background:{SEL}; }}
             QPushButton {{ border-radius:8px; font-size:13px; padding:7px 0; font-weight:500; }}
             QPushButton#ok     {{ background:{ACC}; color:#fff; border:none; }}
             QPushButton#ok:hover {{ background:#1a8eff; }}
             QPushButton#cancel {{ background:{SEL}; color:{T1}; border:none; }}
             QPushButton#cancel:hover {{ background:{DIV}; }}
-        """)
+            QPushButton#tab {{ background:transparent; color:{T2}; border:none;
+                               font-size:13px; font-weight:500; padding:4px 16px; border-radius:12px; }}
+            QPushButton#tab:checked {{ background:{SEL}; color:{T1}; }}
+        """
+        self.setStyleSheet(ss)
+
         v = QVBoxLayout(self); v.setContentsMargins(24, 20, 24, 20); v.setSpacing(10)
+
+        # mode toggle
+        self._notes_data = notes or {}
+        tog = QHBoxLayout(); tog.setSpacing(4)
+        self._btn_url  = QPushButton("URL");  self._btn_url.setObjectName("tab")
+        self._btn_note = QPushButton("Note"); self._btn_note.setObjectName("tab")
+        self._btn_url.setCheckable(True);  self._btn_note.setCheckable(True)
+        tog.addStretch(); tog.addWidget(self._btn_url); tog.addWidget(self._btn_note); tog.addStretch()
+        v.addLayout(tog)
+
+        # ── URL panel ──────────────────────────────────────────────────────────
+        self._url_panel = QWidget(); up = QVBoxLayout(self._url_panel)
+        up.setContentsMargins(0, 0, 0, 0); up.setSpacing(8)
         if show_display:
-            v.addWidget(QLabel("Display text"))
+            up.addWidget(QLabel("Display text"))
             self._disp = QLineEdit(display); self._disp.setPlaceholderText("Link text")
-            v.addWidget(self._disp)
+            up.addWidget(self._disp)
         else:
             self._disp = None
-        v.addWidget(QLabel("URL"))
+        up.addWidget(QLabel("URL"))
         self._url = QLineEdit(url); self._url.setPlaceholderText("https://")
-        v.addWidget(self._url)
+        up.addWidget(self._url)
+        up.addStretch()
+        v.addWidget(self._url_panel)
+
+        # ── Note panel ─────────────────────────────────────────────────────────
+        self._note_panel = QWidget(); np = QVBoxLayout(self._note_panel)
+        np.setContentsMargins(0, 0, 0, 0); np.setSpacing(8)
+        self._note_search = QLineEdit(); self._note_search.setPlaceholderText("Search notes…")
+        np.addWidget(self._note_search)
+        self._note_list = QListWidget()
+        self._note_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        np.addWidget(self._note_list)
+        v.addWidget(self._note_panel)
+
+        self._populate_notes("")
+        self._note_search.textChanged.connect(self._populate_notes)
+        self._note_list.itemDoubleClicked.connect(lambda _: self.accept())
+
+        # ── Buttons ────────────────────────────────────────────────────────────
         row = QHBoxLayout(); row.setSpacing(10)
         cancel = QPushButton("Cancel"); cancel.setObjectName("cancel")
         ok     = QPushButton("OK");     ok.setObjectName("ok")
-        cancel.clicked.connect(self.reject)
-        ok.clicked.connect(self.accept)
+        cancel.clicked.connect(self.reject); ok.clicked.connect(self.accept)
         self._url.returnPressed.connect(self.accept)
         row.addWidget(cancel); row.addWidget(ok)
         v.addLayout(row)
-        (self._disp or self._url).setFocus()
 
-    def result_url(self):     return self._url.text().strip()
-    def result_display(self): return self._disp.text().strip() if self._disp else ""
+        self._btn_url.clicked.connect(lambda: self._set_mode("url"))
+        self._btn_note.clicked.connect(lambda: self._set_mode("note"))
+
+        # start in note mode if editing an existing localnotes:// link
+        if url.startswith("localnotes://"):
+            self._set_mode("note")
+            self._preselect_note(url[len("localnotes://"):])
+        else:
+            self._set_mode("url")
+            (self._disp or self._url).setFocus()
+
+    def _set_mode(self, mode):
+        self._btn_url.setChecked(mode == "url")
+        self._btn_note.setChecked(mode == "note")
+        self._url_panel.setVisible(mode == "url")
+        self._note_panel.setVisible(mode == "note")
+        if mode == "note":
+            self._note_search.setFocus()
+
+    def _populate_notes(self, query=""):
+        self._note_list.clear()
+        q = query.lower()
+        sorted_notes = sorted(
+            self._notes_data.items(),
+            key=lambda x: x[1].get("modified", ""),
+            reverse=True,
+        )
+        for path, info in sorted_notes:
+            title = info.get("title", "") or os.path.basename(path)
+            nb    = info.get("notebook", "")
+            label = f"{title}  —  {nb}" if nb else title
+            if not q or q in label.lower():
+                item = QListWidgetItem(label)
+                item.setData(Qt.ItemDataRole.UserRole, path)
+                self._note_list.addItem(item)
+
+    def _preselect_note(self, path):
+        for i in range(self._note_list.count()):
+            if self._note_list.item(i).data(Qt.ItemDataRole.UserRole) == path:
+                self._note_list.setCurrentRow(i)
+                break
+
+    def result_url(self):
+        if self._btn_note.isChecked():
+            sel = self._note_list.currentItem()
+            if sel:
+                return "localnotes://" + sel.data(Qt.ItemDataRole.UserRole)
+            return ""
+        return self._url.text().strip()
+
+    def result_display(self):
+        if self._btn_note.isChecked():
+            sel = self._note_list.currentItem()
+            if sel:
+                # return just the title part (before the " — notebook" suffix)
+                return sel.text().split("  —  ")[0].strip()
+            return ""
+        return self._disp.text().strip() if self._disp else ""
 
 # ── Toolbar popups ────────────────────────────────────────────────────────────
 class _ToolPopup(QFrame):
@@ -2400,9 +2511,10 @@ class FormatPopup(_ToolPopup):
         cur = self._ed.textCursor()
         existing_href = cur.charFormat().anchorHref()
         has_sel = cur.hasSelection()
+        notes = getattr(self._ed.window(), "current_notes", {})
 
         if existing_href:
-            dlg = _LinkDialog(url=existing_href, show_display=False, parent=self._ed.window())
+            dlg = _LinkDialog(url=existing_href, show_display=False, notes=notes, parent=self._ed.window())
             if dlg.exec() != QDialog.DialogCode.Accepted:
                 return
             new_url = dlg.result_url()
@@ -2411,9 +2523,12 @@ class FormatPopup(_ToolPopup):
                 return
             fmt = QTextCharFormat()
             fmt.setAnchorHref(new_url)
+            # update display text if it was a note link and title changed
+            if new_url.startswith("localnotes://") and not cur.hasSelection():
+                fmt.setAnchor(True)
             cur.mergeCharFormat(fmt)
         elif has_sel:
-            dlg = _LinkDialog(show_display=False, parent=self._ed.window())
+            dlg = _LinkDialog(show_display=False, notes=notes, parent=self._ed.window())
             if dlg.exec() != QDialog.DialogCode.Accepted:
                 return
             url = dlg.result_url()
@@ -2424,7 +2539,7 @@ class FormatPopup(_ToolPopup):
             fmt.setForeground(QColor(ACC)); fmt.setFontUnderline(True)
             cur.mergeCharFormat(fmt)
         else:
-            dlg = _LinkDialog(show_display=True, parent=self._ed.window())
+            dlg = _LinkDialog(show_display=True, notes=notes, parent=self._ed.window())
             if dlg.exec() != QDialog.DialogCode.Accepted:
                 return
             url = dlg.result_url()
@@ -2436,7 +2551,6 @@ class FormatPopup(_ToolPopup):
             fmt.setAnchor(True); fmt.setAnchorHref(url)
             fmt.setForeground(QColor(ACC)); fmt.setFontUnderline(True)
             cur.insertText(display, fmt)
-            # reset format after link so typing continues in normal style
             reset = QTextCharFormat()
             reset.setFontFamilies([_FONT_EDITOR]); reset.setFontPointSize(14.0)
             reset.setAnchor(False); reset.setAnchorHref("")
@@ -4301,6 +4415,7 @@ class NotesApp(QMainWindow):
         v.addWidget(title_row)
 
         self._editor = NoteEditor()
+        self._editor.note_link_clicked.connect(self._open_note)
         self._editor.setFrameShape(QFrame.Shape.NoFrame)
         self._editor.setFont(QFont(_FONT_BODY, 14))
         self._editor.setStyleSheet(
