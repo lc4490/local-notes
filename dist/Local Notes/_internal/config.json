@@ -1,5 +1,10 @@
 {
   "root": "/Users/leonardo01px2020/notes/",
-  "master_pw_verifier": "aFQH+gDstCAQTot3d5abMWdBQUFBQUJwLWtUNjY2X2I1UDJ0QWZVbU9xWTF3T2p6b0xIRmQ3di00QWY5cFBrdC1MZnFMLWxJc3ZYcnJQbjhzYTBsblRJNEpESXJ1ZG82aE5LWUc3YmcwTWNPeGtlX1dnPT0=",
-  "theme": "notes24"
+  "theme": "notes24",
+  "ai": {
+    "enabled": true,
+    "endpoint": "http://localhost:11434",
+    "model": "llama3.2",
+    "embed_model": "nomic-embed-text"
+  }
 }

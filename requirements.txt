@@ -1,0 +1,15 @@
+# ── Desktop app ───────────────────────────────────────────────────────────────
+PySide6>=6.5
+
+# ── Web server (Tailscale) ────────────────────────────────────────────────────
+fastapi>=0.110
+uvicorn>=0.29
+requests>=2.31           # Ollama client (desktop AI panel + web chat)
+
+# ── AI / semantic search (optional) ──────────────────────────────────────────
+# chromadb>=0.5          # uncomment to enable note indexing + semantic search
+
+# ── Voice transcription (optional) ────────────────────────────────────────────
+# faster-whisper>=1.0
+# sounddevice>=0.4
+# numpy>=1.26

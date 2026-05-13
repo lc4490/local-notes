@@ -15,7 +15,6 @@ IMPORTANT: Do NOT post this list to the issue-tracker. Use it as a basis for
             tracking down the missing module yourself. Thanks!
 
 missing module named 'org.python' - imported by copy (optional), xml.sax (delayed, conditional)
-missing module named org - imported by pickle (optional)
 missing module named pep517 - imported by importlib.metadata (delayed)
 missing module named winreg - imported by importlib._bootstrap_external (conditional), platform (delayed, optional), mimetypes (optional), urllib.request (delayed, conditional, optional), requests.utils (delayed, conditional, optional)
 missing module named nt - imported by os (delayed, conditional, optional), ntpath (optional), shutil (conditional), importlib._bootstrap_external (conditional), ctypes (delayed, conditional)
@@ -26,6 +25,7 @@ missing module named msvcrt - imported by subprocess (optional), multiprocessing
 missing module named 'java.lang' - imported by platform (delayed, optional), xml.sax._exceptions (conditional)
 missing module named multiprocessing.BufferTooShort - imported by multiprocessing (top-level), multiprocessing.connection (top-level)
 missing module named multiprocessing.AuthenticationError - imported by multiprocessing (top-level), multiprocessing.connection (top-level)
+missing module named org - imported by pickle (optional)
 missing module named multiprocessing.get_context - imported by multiprocessing (top-level), multiprocessing.pool (top-level), multiprocessing.managers (top-level), multiprocessing.sharedctypes (top-level)
 missing module named multiprocessing.TimeoutError - imported by multiprocessing (top-level), multiprocessing.pool (top-level)
 missing module named multiprocessing.set_start_method - imported by multiprocessing (top-level), multiprocessing.spawn (top-level)
@@ -45,8 +45,8 @@ missing module named brotli - imported by urllib3.util.request (optional), urlli
 missing module named brotlicffi - imported by urllib3.util.request (optional), urllib3.response (optional)
 missing module named socks - imported by urllib3.contrib.socks (optional)
 missing module named 'typing.io' - imported by importlib.resources (top-level)
-missing module named cryptography.x509.UnsupportedExtension - imported by cryptography.x509 (optional), urllib3.contrib.pyopenssl (optional)
 missing module named bcrypt - imported by cryptography.hazmat.primitives.serialization.ssh (optional)
+missing module named cryptography.x509.UnsupportedExtension - imported by cryptography.x509 (optional), urllib3.contrib.pyopenssl (optional)
 missing module named 'pyodide.ffi' - imported by urllib3.contrib.emscripten.fetch (delayed, optional)
 missing module named pyodide - imported by urllib3.contrib.emscripten.fetch (top-level)
 missing module named js - imported by urllib3.contrib.emscripten.fetch (top-level)

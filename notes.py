@@ -10,14 +10,7 @@ from PySide6.QtWidgets import (
     QMenu, QDialog, QFileDialog, QScrollArea, QStackedWidget,
 )
 
-try:
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-    from cryptography.hazmat.primitives import hashes as _hashes
-    from cryptography.fernet import Fernet as _Fernet
-    import base64 as _base64
-    _CRYPTO_OK = True
-except ImportError:
-    _CRYPTO_OK = False
+import base64 as _base64, hashlib as _hashlib
 from PySide6.QtCore import Qt, QTimer, QSize, QRect, QRectF, QPoint, QPointF, QEvent, QPropertyAnimation, QEasingCurve, QUrl, QThread, Signal
 from PySide6.QtGui import QFont, QPalette, QColor, QBrush, QFontMetrics, QPainter, QTextOption, QTextCursor, QTextCharFormat, QTextBlockFormat, QTextTableFormat, QTextTableCellFormat, QTextLength, QTextFrameFormat, QTextFormat, QShortcut, QKeySequence, QPen, QPainterPath, QSyntaxHighlighter, QPixmap, QTextImageFormat, QTextDocument, QDesktopServices
 
@@ -462,36 +455,26 @@ def _rows_to_gfm(rows):
     return '\n'.join(lines) + '\n'
 
 # ── Password note helpers ─────────────────────────────────────────────────────
-_PW_MARKER        = '<!-- password-note -->'
-_PW_LOCKED_MARKER = '<!-- password-note locked -->'
-_STRENGTH_COLORS  = ['', '#ff453a', '#ff9f0a', '#30d158']
+_PW_MARKER       = '<!-- password-note -->'
+_STRENGTH_COLORS = ['', '#ff453a', '#ff9f0a', '#30d158']
 
 def _is_password_note(content: str) -> bool:
     for line in content.split('\n')[:6]:
-        if line.strip() in (_PW_MARKER, _PW_LOCKED_MARKER):
+        if line.strip() == _PW_MARKER:
             return True
     return False
 
-def _pw_derive_key(master_pw: str, salt: bytes) -> bytes:
-    kdf = PBKDF2HMAC(algorithm=_hashes.SHA256(), length=32, salt=salt, iterations=260_000)
-    return _base64.urlsafe_b64encode(kdf.derive(master_pw.encode()))
-
-def _pw_encrypt(master_pw: str, plaintext: str) -> str:
-    salt  = os.urandom(16)
-    token = _Fernet(_pw_derive_key(master_pw, salt)).encrypt(plaintext.encode())
-    return _base64.b64encode(salt + token).decode()
-
-def _pw_decrypt(master_pw: str, ciphertext: str) -> str:
-    raw   = _base64.b64decode(ciphertext)
-    salt, token = raw[:16], raw[16:]
-    return _Fernet(_pw_derive_key(master_pw, salt)).decrypt(token).decode()
-
 def _pw_make_verifier(master_pw: str) -> str:
-    return _pw_encrypt(master_pw, 'VERIFY')
+    salt = os.urandom(16)
+    h    = _hashlib.pbkdf2_hmac('sha256', master_pw.encode(), salt, 260_000)
+    return _base64.b64encode(salt + h).decode()
 
 def _pw_verify(master_pw: str, verifier: str) -> bool:
     try:
-        return _pw_decrypt(master_pw, verifier) == 'VERIFY'
+        raw  = _base64.b64decode(verifier)
+        salt, stored = raw[:16], raw[16:]
+        h    = _hashlib.pbkdf2_hmac('sha256', master_pw.encode(), salt, 260_000)
+        return h == stored
     except Exception:
         return False
 
@@ -525,11 +508,6 @@ def _parse_pw_rows(content: str) -> list:
     data = rows[1:] if len(rows) > 1 else []
     return [[r[i] if i < len(r) else '' for i in range(3)] for r in data] or [['', '', '']]
 
-def _extract_encrypted_blob(content: str) -> str:
-    lines = content.split('\n')
-    for i, line in enumerate(lines):
-        if line.strip() == _PW_LOCKED_MARKER:
-            return '\n'.join(lines[i + 1:]).strip()
     return ''
 
 
@@ -720,25 +698,20 @@ class PasswordNoteView(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
         _t = _THEMES["notes24"] if _ACTIVE_THEME == "notes07" else _THEMES.get(_ACTIVE_THEME, _THEMES["notes26"])
-        BG0 = _t["BG0"]
-        self._path          = None
-        self._encrypted_blob = None
-        self._master_pw     = None
+        self._path = None
         self._rows: list[_PwRow] = []
-        self.setStyleSheet(f"background:{BG0};")
+        self.setStyleSheet(f"background:{_t['BG0']};")
 
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
         self._stack     = QStackedWidget()
         self._gen_popup = _GenPopup(self)
         root.addWidget(self._stack)
-
         self._stack.addWidget(self._build_lock_page())
         self._stack.addWidget(self._build_table_page())
 
         self._lock_timer = QTimer(singleShot=True)
         self._lock_timer.timeout.connect(self.lock)
 
-    # ── lock page ─────────────────────────────────────────────────────────────
     def _build_lock_page(self):
         _t = _THEMES["notes24"] if _ACTIVE_THEME == "notes07" else _THEMES.get(_ACTIVE_THEME, _THEMES["notes26"])
         BG0, BG2, DIV, T1, ACC = _t["BG0"], _t["BG2"], _t["DIV"], _t["T1"], _t["ACC"]
@@ -767,7 +740,7 @@ class PasswordNoteView(QWidget):
         unlock_btn.clicked.connect(self._try_unlock)
 
         self._lock_err = QLabel(""); self._lock_err.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._lock_err.setStyleSheet(f"color:#ff453a;font-size:12px;background:transparent;")
+        self._lock_err.setStyleSheet("color:#ff453a;font-size:12px;background:transparent;")
 
         v.addStretch()
         for ww in (icon, lbl): v.addWidget(ww)
@@ -854,22 +827,15 @@ class PasswordNoteView(QWidget):
     # ── public API ────────────────────────────────────────────────────────────
     def load(self, path, content):
         self._path = path
-        self._lock_timer.stop()
         self._pw_input.clear(); self._lock_err.clear()
-
-        if _PW_LOCKED_MARKER in content:
-            self._encrypted_blob = _extract_encrypted_blob(content)
-            if self._master_pw and _CRYPTO_OK:
-                try:
-                    plain = _pw_decrypt(self._master_pw, self._encrypted_blob)
-                    self._populate(_parse_pw_rows(plain)); return
-                except Exception:
-                    pass
+        self._lock_timer.stop()
+        verifier = _CFG.get('master_pw_verifier')
+        if verifier is None:
+            # no master password set yet — go straight to table
+            self._populate(_parse_pw_rows(content))
+        else:
             self._stack.setCurrentIndex(0)
             QTimer.singleShot(50, self._pw_input.setFocus)
-        else:
-            self._encrypted_blob = None
-            self._populate(_parse_pw_rows(content))
 
     def lock(self, focus=True):
         self._save_now()
@@ -880,14 +846,9 @@ class PasswordNoteView(QWidget):
             QTimer.singleShot(50, self._pw_input.setFocus)
 
     def get_body(self):
-        """Return file body (marker + table or encrypted blob) for saving."""
-        rows = [rw.get_data() for rw in self._rows]
+        rows  = [rw.get_data() for rw in self._rows]
         table = _rows_to_gfm([['Website', 'Username', 'Password']] + rows)
-        plain = f"{_PW_MARKER}\n{table}"
-        if self._master_pw and _CRYPTO_OK and _CFG.get('master_pw_verifier'):
-            blob = _pw_encrypt(self._master_pw, plain)
-            return f"{_PW_LOCKED_MARKER}\n{blob}"
-        return plain
+        return f"{_PW_MARKER}\n{table}"
 
     # ── internals ─────────────────────────────────────────────────────────────
     def _populate(self, rows):
@@ -899,6 +860,21 @@ class PasswordNoteView(QWidget):
         for r in rows: self._add_row(*r)
         self._stack.setCurrentIndex(1)
         self._lock_timer.start(self._AUTO_LOCK_MS)
+
+    def _try_unlock(self):
+        pw = self._pw_input.text().strip()
+        if not pw: return
+        verifier = _CFG.get('master_pw_verifier')
+        if verifier is None:
+            _CFG['master_pw_verifier'] = _pw_make_verifier(pw)
+            _save_config(_CFG)
+        elif not _pw_verify(pw, verifier):
+            self._lock_err.setText("Incorrect password")
+            self._pw_input.clear(); self._pw_input.setFocus(); return
+        raw = ""
+        try:    raw = read_note(self._path)
+        except Exception: pass
+        self._populate(_parse_pw_rows(_body(raw)))
 
     def _add_row(self, website='', username='', password=''):
         rw = _PwRow(self._row_container, website, username, password,
@@ -969,32 +945,6 @@ class PasswordNoteView(QWidget):
 
     def _reset_timer(self):
         self._lock_timer.start(self._AUTO_LOCK_MS)
-
-    def _try_unlock(self):
-        pw = self._pw_input.text().strip()
-        if not pw: return
-        if not _CRYPTO_OK:
-            self._lock_err.setText("Install 'cryptography' package to enable locking.")
-            return
-        verifier = _CFG.get('master_pw_verifier')
-        if verifier is None:
-            # first time — set master password
-            _CFG['master_pw_verifier'] = _pw_make_verifier(pw)
-            _save_config(_CFG)
-            self._master_pw = pw
-            self._populate([['', '', '']])
-            return
-        if not _pw_verify(pw, verifier):
-            self._lock_err.setText("Incorrect password")
-            self._pw_input.clear(); self._pw_input.setFocus(); return
-        self._master_pw = pw
-        if self._encrypted_blob:
-            try:
-                plain = _pw_decrypt(pw, self._encrypted_blob)
-                self._populate(_parse_pw_rows(plain)); return
-            except Exception:
-                self._lock_err.setText("Decryption failed"); return
-        self._populate([['', '', '']])
 
     def _save_now(self):
         if not self._path or self._stack.currentIndex() == 0: return
@@ -2511,7 +2461,7 @@ class FormatPopup(_ToolPopup):
         cur = self._ed.textCursor()
         existing_href = cur.charFormat().anchorHref()
         has_sel = cur.hasSelection()
-        notes = getattr(self._ed.window(), "current_notes", {})
+        notes = load_all()
 
         if existing_href:
             dlg = _LinkDialog(url=existing_href, show_display=False, notes=notes, parent=self._ed.window())
@@ -4396,11 +4346,6 @@ class NotesApp(QMainWindow):
         title_row = QWidget(); title_row.setStyleSheet("background:transparent;")
         trl = QHBoxLayout(title_row)
         trl.setContentsMargins(36, 0, 36, 0); trl.setSpacing(3)
-        self._lock_prefix = QLabel("🔒")
-        self._lock_prefix.setStyleSheet(
-            f"color:{T1};font-size:22px;font-weight:700;"
-            f"background:transparent;padding:2px 0 6px;")
-        self._lock_prefix.hide()
         self._title_edit = QLineEdit()
         self._title_edit.setPlaceholderText("Title")
         self._title_edit.setStyleSheet(
@@ -4410,7 +4355,6 @@ class NotesApp(QMainWindow):
         )
         self._title_edit.editingFinished.connect(self._on_title_changed)
         self._title_edit.installEventFilter(self)
-        trl.addWidget(self._lock_prefix)
         trl.addWidget(self._title_edit, 1)
         v.addWidget(title_row)
 
@@ -4623,7 +4567,6 @@ class NotesApp(QMainWindow):
             self._set_special_note_panel(True)
             self._is_pw_note  = True
             self._is_bdg_note = False
-            self._lock_prefix.show()
             self._editor.hide(); self._date_lbl.hide()
             self._budget_view.hide()
             self._btn_format.setEnabled(False)
@@ -4638,7 +4581,6 @@ class NotesApp(QMainWindow):
             self._set_special_note_panel(True)
             self._is_pw_note  = False
             self._is_bdg_note = True
-            self._lock_prefix.hide()
             self._editor.hide(); self._date_lbl.hide()
             self._pw_view.hide()
             self._btn_format.setEnabled(False)
@@ -4651,7 +4593,6 @@ class NotesApp(QMainWindow):
             self._set_special_note_panel(False)
             self._is_pw_note  = False
             self._is_bdg_note = False
-            self._lock_prefix.hide()
             self._pw_view.hide(); self._budget_view.hide()
             self._editor.show(); self._date_lbl.show()
             self._btn_format.setEnabled(True)
@@ -4923,9 +4864,6 @@ class NotesApp(QMainWindow):
             f"font-size:22px;font-weight:700;padding:2px 0 6px;}}")
         self._date_lbl.setStyleSheet(
             f"background:transparent;color:{'#666666' if _ACTIVE_THEME == 'notes07' else T2};font-size:11px;padding:10px 0 4px;")
-        self._lock_prefix.setStyleSheet(
-            f"color:{T1};font-size:22px;font-weight:700;"
-            f"background:transparent;padding:2px 0 6px;")
         self._search_bar.setStyleSheet(
             f"QLineEdit{{background:transparent;border:none;color:{T1};"
             f"font-size:13px;font-family:'{_FONT_BODY}';"
