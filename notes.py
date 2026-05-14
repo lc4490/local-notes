@@ -2253,9 +2253,11 @@ class _LinkDialog(QDialog):
                 item.setData(Qt.ItemDataRole.UserRole, path)
                 self._note_list.addItem(item)
 
-    def _preselect_note(self, path):
+    def _preselect_note(self, ref):
+        if not os.path.isabs(ref):
+            ref = os.path.normpath(os.path.join(ROOT, ref))
         for i in range(self._note_list.count()):
-            if self._note_list.item(i).data(Qt.ItemDataRole.UserRole) == path:
+            if self._note_list.item(i).data(Qt.ItemDataRole.UserRole) == ref:
                 self._note_list.setCurrentRow(i)
                 break
 
@@ -2263,7 +2265,12 @@ class _LinkDialog(QDialog):
         if self._btn_note.isChecked():
             sel = self._note_list.currentItem()
             if sel:
-                return "localnotes://" + sel.data(Qt.ItemDataRole.UserRole)
+                path = sel.data(Qt.ItemDataRole.UserRole)
+                try:
+                    rel = os.path.relpath(path, ROOT)
+                except ValueError:
+                    rel = path
+                return "localnotes://" + rel
             return ""
         return self._url.text().strip()
 
@@ -4359,7 +4366,11 @@ class NotesApp(QMainWindow):
         v.addWidget(title_row)
 
         self._editor = NoteEditor()
-        self._editor.note_link_clicked.connect(self._open_note)
+        self._editor.note_link_clicked.connect(
+            lambda ref: self._open_note(
+                ref if os.path.isabs(ref) else os.path.normpath(os.path.join(ROOT, ref))
+            )
+        )
         self._editor.setFrameShape(QFrame.Shape.NoFrame)
         self._editor.setFont(QFont(_FONT_BODY, 14))
         self._editor.setStyleSheet(
@@ -4554,14 +4565,16 @@ class NotesApp(QMainWindow):
         self.sel_path = path
         info = self.current_notes.get(path, {})
 
-        self._title_edit.blockSignals(True)
-        self._title_edit.setText(info.get("title", ""))
-        self._title_edit.setCursorPosition(0)
-        self._title_edit.blockSignals(False)
-
         raw = ""
         try:    raw = read_note(path)
         except Exception: pass
+
+        title = info.get("title") or next(
+            (l[2:].strip() for l in raw.split("\n") if l.startswith("# ")), "") or ""
+        self._title_edit.blockSignals(True)
+        self._title_edit.setText(title)
+        self._title_edit.setCursorPosition(0)
+        self._title_edit.blockSignals(False)
 
         if _is_password_note(raw):
             self._set_special_note_panel(True)
